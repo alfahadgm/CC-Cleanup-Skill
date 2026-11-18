@@ -108,7 +108,8 @@ After a long run the conversation is compacted, and the end of this file can be 
    Not applied:
    - <fix>: <reason>
    Needs decision:
-   - <file> / <symbol>: <problem> | options: <A>; <B>; leave as is
+   - <the decision's question>
+     <its Today, Problem, Evidence, Option, Suggested, and Code lines>
    Renamed:
    - <old name> to <new name>
    Set env:
@@ -116,7 +117,7 @@ After a long run the conversation is compacted, and the end of this file can be 
    Rotate:
    - <secret name> found in <file>
    ```
-   Leave out empty sections. If nothing changed, commit with `--allow-empty` so the history shows the step ran. Write the message to `.cleanup/message` with the Write tool and commit with `git commit -F .cleanup/message`; a multi-line message quoted in a shell gets mangled.
+   Leave out empty sections. Copy each returned decision whole, every line word for word: this commit is the only record of it, and step 11 builds the user's question from those lines. If nothing changed, commit with `--allow-empty` so the history shows the step ran. Write the message to `.cleanup/message` with the Write tool and commit with `git commit -F .cleanup/message`; a multi-line message quoted in a shell gets mangled.
    - If a pre-commit hook changes files, stage them and commit again. If it rejects the commit, fix what this step caused. If it fails only on things that were already broken, ask the user once whether this run's commits may skip hooks (`--no-verify`) or the run should stop. Never skip hooks on your own.
 7. **Refresh the state.**
    - If the step changed the check setup (a new test runner, changed scripts), detect the check commands again, run the new ones, and add what fails to the allowed failures.
@@ -128,9 +129,13 @@ If the Workflow tool isn't available, run the same phases yourself with subagent
 
 ## Step 11: decisions
 
-Collect every `Needs decision:` line from this run's commits (`git log <base>..HEAD`). Find each item again in the current code by its symbol, since files may have moved or been renamed since. Drop items that no longer apply and merge duplicates. If none are left, go to the next step.
+Collect every `Needs decision:` item from this run's commits (`git log <base>..HEAD`). Find each item again in the current code by the symbol on its `Code:` line, since files may have moved or been renamed since. Drop items that no longer apply and merge duplicates. If none are left, go to the next step.
 
-Ask the user with AskUserQuestion, up to 4 questions per call. Ask about the highest-impact items one per question: name the location and the problem, give up to 3 options from the item, and always add "Leave as is". Group many similar items (such as near-identical colors) into one question with options like "Apply all suggested" and "Leave all as is". Save the answers in `state` as soon as you have them, so a resume doesn't ask again. If you can't ask, because AskUserQuestion is unavailable or denied as in a non-interactive run, leave every item as is; Finish lists them.
+Ask the user with AskUserQuestion: one decision per question, up to 4 questions per call, the highest impact first. The user may see only the dialog and may not know the code, so each question must stand on its own:
+- The question text is the item's question, then its `Today:`, `Problem:`, `Evidence:`, and `Code:` lines, in that order. Keep them in plain words about what users and the data experience. Rewrite any that still read like code, and read the code again if a line doesn't say why it matters.
+- Each option gets a short label, and a description that says what it changes for users, for an existing flow, and for data already stored. Put the suggested option first, marked "(Recommended)", and always add "Leave as is".
+
+Group only near-identical items (such as near-identical colors) into one question with options like "Apply all suggested" and "Leave all as is". Save the answers in `state` as soon as you have them, so a resume doesn't ask again. If you can't ask, because AskUserQuestion is unavailable or denied as in a non-interactive run, leave every item as is; Finish lists them.
 
 Then run step 11 like any other step, with one slice per chosen decision (the item and the chosen option), and commit as `cleanup(decisions): ...`. List the items the user left alone under `Left as is:` in that commit. If nothing was chosen, skip the workflow but still make that commit, empty.
 
@@ -139,7 +144,7 @@ Then run step 11 like any other step, with one slice per chosen decision (the it
 Run the full check suite one last time, unless HEAD is the last commit a full run covered. Then tell the user, in chat and not in a file:
 - the branch, the number of commits, and that nothing was pushed
 - check results before (the baseline) and after the run
-- what's left: fixes not applied and decisions left as is
+- what's left: fixes not applied, and each decision left as is, with its question, problem, and suggested option in the commit's plain words
 - every `Set env:` item: the variables the user must now set locally and in CI
 - every `Rotate:` item: the user must rotate those secrets, because removing them from the code doesn't remove them from git history
 - how to review (`git log --oneline <base>..HEAD`, `git diff <base>..HEAD`) and how to undo one step (`git revert <sha>`)

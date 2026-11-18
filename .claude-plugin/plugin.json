@@ -1,6 +1,6 @@
 {
   "name": "cleanup",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Fix a whole codebase in one run: 12 steps, each one verified against the project's checks and committed on its own branch.",
   "author": { "name": "alfahadgm" },
   "repository": "https://github.com/alfahadgm/CC-Cleanup-Skill",

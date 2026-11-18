@@ -7,8 +7,9 @@
 git rev-parse --git-dir >/dev/null 2>&1 || { echo 'Run this inside the cleaned copy of the fixture (a git repo).'; exit 2; }
 
 fail=0
-# The lines under "Needs decision:" and "Left as is:" in the run's commit messages.
-decisions=$(git log --format=%b | awk '/^(Needs decision|Left as is):$/ { on = 1; next } /^[A-Za-z][A-Za-z ]*:$/ { on = 0 } on')
+# The decisions under "Needs decision:" and "Left as is:" in the run's commit messages.
+# Only their question, Problem, and Code lines: the other lines mention neighbouring problems in passing.
+decisions=$(git log --format=%b | awk '/^(Needs decision|Left as is):$/ { on = 1; next } /^[A-Za-z][A-Za-z ]*:$/ { on = 0 } on && /^(- |  (Problem|Code): )/')
 
 # check <label> <command that succeeds when the problem is gone> [<regex that names the problem in a decision>]
 check() {

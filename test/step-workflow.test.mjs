@@ -46,7 +46,7 @@ const base = { rules: 'RULES', step: 'STEP' }
 // The full path.
 {
   const found = {
-    'find: a': [finding(['src/x.js'], { risk: 'mechanical' }), finding(['src/x.js', 'src/y.js']), finding(['src/z.js'], { kind: 'decision', options: ['A', 'B'] })],
+    'find: a': [finding(['src/x.js'], { risk: 'mechanical' }), finding(['src/x.js', 'src/y.js']), finding(['src/z.js'], { kind: 'decision', decision: { question: 'Q?', today: 'T', evidence: 'E', options: ['A', 'B'], suggested: 'A' } })],
     'find: b': [finding(['.\\SRC\\y.js']), finding(['src/w.js']), finding([], { dependency: 'remove' }), finding(['src/q.js'], { risk: 'mechanical', dependency: 'add' })],
   }
   const verdicts = {
@@ -79,8 +79,7 @@ const base = { rules: 'RULES', step: 'STEP' }
   assert.ok(fixes[3].prompt.includes('leftpad'), 'dependencies the fixes orphaned reach the removal agent')
 
   assert.equal(result.applied.length, 4)
-  assert.equal(result.decisions.length, 1)
-  assert.ok(result.decisions[0].startsWith('src/z.js / s: ') && result.decisions[0].endsWith('options: A; B'))
+  assert.deepEqual(result.decisions, ['Q?\n  Today: T\n  Problem: p src/z.js\n  Evidence: E\n  Option 1: A\n  Option 2: B\n  Suggested: A\n  Code: src/z.js / s'])
   assert.deepEqual(result.stats, { verified: 6, refuted: 1, fixAgents: 4 })
   assert.equal(result.canon, 'use userId')
 }
@@ -94,6 +93,12 @@ const base = { rules: 'RULES', step: 'STEP' }
 for (const die of [() => null, () => Promise.reject(new Error('agent stalled on all 6 attempts'))]) {
   const { result } = await run({ ...base, trustChecks: true }, (_prompt, opts) => (opts.phase === 'Find' ? { findings: [finding(['a.js'], { risk: 'mechanical' })] } : die()))
   assert.match(result.notApplied[0], /fix: group 1: the agent didn't finish/)
+}
+
+// A decision that came back without its write-up is passed on with what it has, not dropped.
+{
+  const { result } = await run({ ...base }, (_prompt, opts) => (opts.phase === 'Find' ? { findings: [finding(['a.js'], { kind: 'decision' })] } : { verdicts: [{ index: 0, real: true, reason: '' }] }))
+  assert.deepEqual(result.decisions, ['p a.js\n  Code: a.js / s'])
 }
 
 // A slice given as an object: the label is its name, the prompt gets all of it.

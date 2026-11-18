@@ -51,7 +51,18 @@ const FINDINGS = {
           kind: { type: 'string', enum: ['fix', 'decision'] },
           risk: { type: 'string', enum: ['mechanical', 'behavioral'] },
           dependency: { type: 'string', enum: ['none', 'add', 'remove'] },
-          options: { ...strings, description: 'For a decision: up to 3 options' },
+          decision: {
+            type: 'object',
+            description: 'Required when kind is "decision". Written as the rules say: plain words, one or two short sentences per field, no function, variable, or file names.',
+            properties: {
+              question: { type: 'string', description: 'One plain question that names the choice' },
+              today: { type: 'string', description: 'What happens now, as users or the data experience it' },
+              evidence: { type: 'string', description: 'What you checked, and what the docs and tests say was intended' },
+              options: { ...strings, description: 'Up to 3. Each says what changes for users, for the existing flow, and for data already stored' },
+              suggested: { type: 'string', description: 'The option you would pick, and what would make another one right' },
+            },
+            required: ['question', 'today', 'evidence', 'options', 'suggested'],
+          },
         },
         required: ['files', 'symbols', 'where', 'problem', 'fix', 'kind', 'risk', 'dependency'],
       },
@@ -83,7 +94,7 @@ const RESULT = {
   properties: {
     applied: { ...strings, description: 'One line per fix: the file and what changed' },
     notApplied: { ...strings, description: '"<fix>: <reason>". Start the line with BLOCKED when a permission check stopped it.' },
-    decisions: { ...strings, description: '"<file> / <symbol>: <problem> | options: <A>; <B>"' },
+    decisions: { ...strings, description: 'One string per decision, written as the rules say, one field per line: the question, then "Today: ...", "Problem: ...", "Evidence: ...", "Option 1: ...", "Suggested: ...", "Code: <file> / <symbol>"' },
     untrack: { ...strings, description: 'Files to untrack' },
     env: { ...strings, description: '"<VAR_NAME>: <what it is for>"' },
     rotate: { ...strings, description: '"<secret name> found in <file>". Never the value.' },
@@ -114,7 +125,7 @@ ${
 }
 ${canon ? `\nCanonical choices for this step, already made for the whole codebase. Apply them; don't pick your own:\n${canon}\n` : ''}
 Return every problem this step covers that involves your assignment. You may read any file, and a fix may touch files outside your assignment. Leave problems that belong to another step alone; each step has its own run.
-- kind: "decision" for anything the rules say to return as a decision, with up to 3 options. Otherwise "fix".
+- kind: "decision" for anything the rules say to return as a decision, with \`decision\` filled in as the rules describe. Otherwise "fix".
 - fix: concrete enough for another agent to apply without investigating again.
 - risk: "mechanical" only when the project's compiler, typecheck, or linter would fail if the fix were wrong, such as an unused import or a typed rename. Deleting a file, an export, or a dependency is "behavioral", and so is anything reachable through strings, reflection, or config.
 - dependency: "add" when the fix installs or upgrades a package, "remove" when it uninstalls one, otherwise "none".`
@@ -126,7 +137,7 @@ You didn't produce these findings. Try to disprove each one:
 1. Is the problem real? Read the code; don't trust the description.
 2. Does the fix keep behavior the same, or change only the defect?
 3. Could the change alter behavior? Then a test must cover it. If none does, set testFile to the test file the fix must write first, with a test that passes on the current code.
-For a decision, check only that the problem is real and the options are sound.
+For a decision, check only that the problem is real, the evidence is true, and each option does what it says to users, flows, and stored data.
 Set real to false when you can't confirm the problem, the fix is unsafe, or the finding isn't this step's job. When unsure, false. Return one verdict per finding, by index.
 
 ${JSON.stringify(batch.map((finding, index) => ({ index, ...finding })), null, 1)}`
@@ -239,13 +250,19 @@ const removes = fixes.filter(f => f.dependency === 'remove')
 const unused = collect('unusedDependencies')
 if (removes.length || unused.length) await fix(dependencyPrompt('remove', removes, unused), { label: 'fix: dependencies (remove)' })
 
+// A decision as the user reads it, in the commit message and in the step 11 question. Without its write-up, the problem stands in.
+const card = f => {
+  const d = f.decision
+  const lines = d
+    ? [d.question, `Today: ${d.today}`, `Problem: ${f.problem}`, `Evidence: ${d.evidence}`, ...d.options.map((option, i) => `Option ${i + 1}: ${option}`), `Suggested: ${d.suggested}`]
+    : [f.problem]
+  return [...lines, `Code: ${f.files[0] || f.where} / ${f.symbols.join(', ') || '-'}`].join('\n  ')
+}
+
 return {
   applied: collect('applied'),
   notApplied: [...notApplied, ...collect('notApplied')],
-  decisions: [
-    ...decisions.map(f => `${f.files[0] || f.where} / ${f.symbols.join(', ') || '-'}: ${f.problem} | options: ${(f.options || []).join('; ')}`),
-    ...collect('decisions'),
-  ],
+  decisions: [...decisions.map(card), ...collect('decisions')],
   untrack: collect('untrack'),
   env: collect('env'),
   rotate: collect('rotate'),

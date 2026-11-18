@@ -10,18 +10,26 @@ Finish each fix: when it leaves a helper, file, type, or style unused, delete th
 - If the project has a formatter, run it on the files you changed, and only those.
 
 ## Keep behavior the same
-- Structural steps (dead code, simplify, patterns, placement, naming) must not change what the program does.
-- Correctness steps (tests, business logic, security, error handling) change behavior only to fix a clear defect, and each such fix gets a test that fails before the fix and passes after.
+- Structural steps (dead code, simplify, patterns, placement, naming) must not change what the program does. Neither does the business logic step: it returns what's wrong in a flow as a decision.
+- Correctness steps (tests, security, error handling) change behavior only to fix a clear defect, and each such fix gets a test that fails before the fix and passes after.
 - Before any change that could alter behavior (replacing code with a library call, migrating to another pattern, inverting a boolean, merging functions), make sure a test covers it. If none does, first write one that passes on the current code, then make the change.
 
 ## Decisions: return these instead of changing them
-Return each as a decision: file and symbol (files may move later), the problem, and up to 3 options.
 - External contracts: API request and response shapes, routes and URLs, status codes, database schema and stored values, env var names, stored keys (localStorage, cookies, cache), event and message names, public exports of a published package, CLI flags, file formats.
 - New runtime dependencies and major version upgrades. Using a library the project already depends on is fine.
-- Business rules whose intended behavior is unclear, and any change to what users see or have to do.
+- Business flows and rules: any change to which states, steps, or transitions a flow allows, and any change to what users see or have to do. A flow that looks wrong may be the one the user agreed on, and stored data may depend on it.
 - Removing code that something outside this repo may use.
 
 A name or shape is a contract only when something outside this repo, or stored data, depends on it. The exports of a package that isn't published, and fields that never leave the process, are internal: change them.
+
+The user decides from your words alone and may not know this code. Write each decision in plain words about what users and the data experience, one or two short sentences per field. Name no function, variable, or file in them; the file and symbol have their own place. Write "the payment step ignores a failed charge", not "`payOrder` has an empty catch".
+- question: one plain question that names the choice, such as "Can a cancelled order still be shipped?"
+- today: what happens now.
+- problem: who or what it could hurt, and how. For a small item, name the flow or feature it belongs to, so the user sees why it matters.
+- evidence: what you checked and what makes you think it's wrong: what uses it, and what the docs and tests say was intended. Say so when nothing says. Never state a guess as a fact.
+- options: up to 3. Each says what changes for users, whether an existing flow changes, and what happens to data already stored.
+- suggested: the option you'd pick, and what would make another one right.
+- file and symbol: where it is (files may move later).
 
 ## Git and files
 - Git is read-only for you: `status`, `diff`, `log`, `show`, `blame`, `grep`, `ls-files`. Run nothing that changes the working tree, index, branches, or history: no add, rm, mv, commit, stash, reset, checkout, restore, clean, switch, or push. Other agents are editing the same working tree, and those commands destroy their work or the user's untracked files.
@@ -48,7 +56,7 @@ A name or shape is a contract only when something outside this repo, or stored d
 ## What to return
 - applied: one line per fix (file and what changed)
 - not applied: the fix and why (including blocked)
-- decisions: file and symbol, problem, options
+- decisions: each written as the Decisions section says
 - files to untrack, env vars the user must set, secrets to rotate (names only)
 - renamed: the old and new name of each symbol you renamed (git already tracks moved files)
 - dependencies your fixes left unused
