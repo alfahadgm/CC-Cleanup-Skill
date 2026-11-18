@@ -1,6 +1,6 @@
 # Step 11: Apply the chosen decisions
 
-The conductor passes each decision with the option the user chose. Apply exactly that option. Skip items marked "Leave as is".
+The conductor passes each decision with the option the user chose, one decision per Find agent. In Find, plan that option as fixes that list every file the change touches; don't return it as a decision again. Apply exactly that option. Skip items marked "Leave as is".
 
 - **Contract changes** (API fields, routes, DB columns, env vars, stored keys, event names): change every side in this repo together: server, client, types, tests, docs, .env.example. For a database change, add a new migration; never edit an existing one, and never run it against a real database. Where old data or old clients could still use the old name, keep accepting it and say so in the commit.
 - **New dependencies**: add with the package manager, then replace the hand-rolled code.

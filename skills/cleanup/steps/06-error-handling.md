@@ -7,6 +7,8 @@ First detect the project's error conventions: exceptions or result types, error 
 - Missing awaits, unhandled promise rejections, and fire-and-forget calls whose failure matters.
 - Errors caught too broadly or too early (one catch around a large block). Narrow them.
 - Failures that leave state half-updated (partial writes, UI stuck loading). Use the transaction, rollback, or `finally` pattern the project already uses.
+- Resources not released on every path: files, connections, locks, subscriptions, event listeners, timers. Release them with the pattern the project already uses (`finally`, context managers, `defer`, cleanup functions).
+- Suppressions that hide a real problem: `eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `# type: ignore`, `# noqa`, casts to `any`. Fix the problem and remove the suppression. Keep the ones with a stated reason that still holds.
 - External calls (network, database, file system, third-party APIs) with no timeout or failure path. Use the project's existing timeout values; if there are none, use a generous default (for example 30 seconds for HTTP) and say so in the commit.
 - Users shown raw errors, stack traces, or nothing at all. Show a helpful message the way the project already does.
 - Errors logged without enough context to debug (what failed, for which input or ID). Never log secrets or personal data.

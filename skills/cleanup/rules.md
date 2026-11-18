@@ -2,9 +2,12 @@
 
 You are fixing code, not reporting on it. Apply each verified fix directly. Don't write report files, and don't leave TODO comments in place of a fix.
 
+Finish each fix: when it leaves a helper, file, type, or style unused, delete that too. Return a dependency it leaves unused; only the dependency agent removes dependencies.
+
 ## Follow this project's conventions
-- Infer them from the code: folder layout, dominant patterns, existing helpers, styling approach, error style, naming, test style. Match them.
+- Start from the project brief. Where it's silent, infer the conventions from the code: folder layout, dominant patterns, existing helpers, styling approach, error style, naming, test style. Match them.
 - Don't impose a different architecture or your own preferences. Skip changes that are only a matter of taste.
+- If the project has a formatter, run it on the files you changed, and only those.
 
 ## Keep behavior the same
 - Structural steps (dead code, simplify, patterns, placement, naming) must not change what the program does.
@@ -18,9 +21,14 @@ Return each as a decision: file and symbol (files may move later), the problem, 
 - Business rules whose intended behavior is unclear, and any change to what users see or have to do.
 - Removing code that something outside this repo may use.
 
+A name or shape is a contract only when something outside this repo, or stored data, depends on it. The exports of a package that isn't published, and fields that never leave the process, are internal: change them.
+
 ## Git and files
-- Never run git commands that change the index, branches, or history: add, rm, mv, commit, stash, reset, switch, push. Move and delete files with plain `mv` and `rm`; git detects renames. Return files that need untracking; the conductor stages and commits.
+- Git is read-only for you: `status`, `diff`, `log`, `show`, `blame`, `grep`, `ls-files`. Run nothing that changes the working tree, index, branches, or history: no add, rm, mv, commit, stash, reset, checkout, restore, clean, switch, or push. Other agents are editing the same working tree, and those commands destroy their work or the user's untracked files.
+- Undo a fix by reversing your own edits, never with git. To bring back a file you deleted, write it again from `git show HEAD:<path>`.
+- Move and delete files with plain `mv` and `rm`; git detects renames. Return files that need untracking; the conductor stages and commits.
 - Never touch the user's untracked files (the conductor passes the list).
+- Never touch `.cleanup/`. It holds this run's state and ignores itself, so don't add it to .gitignore either.
 - Change dependencies (install, remove, upgrade) only when you're assigned the dependency work.
 
 ## Never
@@ -29,7 +37,7 @@ Return each as a decision: file and symbol (files may move later), the problem, 
 - Run anything against production or a real database, deploy, or publish.
 - Skip, delete, or weaken a test to make it pass.
 - Reformat code you aren't otherwise changing.
-- Edit the cleanup skill's own files.
+- Edit the cleanup plugin's own files.
 
 ## Working in parallel
 - Edit only the files in your assignment. If a fix needs another file, return it as not applied and name the file.
@@ -42,3 +50,5 @@ Return each as a decision: file and symbol (files may move later), the problem, 
 - not applied: the fix and why (including blocked)
 - decisions: file and symbol, problem, options
 - files to untrack, env vars the user must set, secrets to rotate (names only)
+- renamed: the old and new name of each symbol you renamed (git already tracks moved files)
+- dependencies your fixes left unused

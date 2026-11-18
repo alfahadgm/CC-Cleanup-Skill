@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "if": "Bash(git push *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
+          { "type": "command", "if": "Bash(git clean *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
+          { "type": "command", "if": "Bash(git reset --hard *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" }
+        ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          { "type": "command", "if": "PowerShell(git push *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
+          { "type": "command", "if": "PowerShell(git clean *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
+          { "type": "command", "if": "PowerShell(git reset --hard *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" }
+        ]
+      }
+    ]
+  }
+}
