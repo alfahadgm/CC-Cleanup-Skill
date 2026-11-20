@@ -7,6 +7,7 @@ Finish each fix: when it leaves a helper, file, type, or style unused, delete th
 ## Follow this project's conventions
 - Start from the project brief. Where it's silent, infer the conventions from the code: folder layout, dominant patterns, existing helpers, styling approach, error style, naming, test style. Match them.
 - Don't impose a different architecture or your own preferences. Skip changes that are only a matter of taste.
+- Keep to the layers in the brief. No fix, in any step, may add an import that points the wrong way or put code in a layer where it doesn't belong.
 - If the project has a formatter, run it on the files you changed, and only those.
 
 ## Keep behavior the same
@@ -22,12 +23,12 @@ Finish each fix: when it leaves a helper, file, type, or style unused, delete th
 
 A name or shape is a contract only when something outside this repo, or stored data, depends on it. The exports of a package that isn't published, and fields that never leave the process, are internal: change them.
 
-The user decides from your words alone and may not know this code. Write each decision in plain words about what users and the data experience, one or two short sentences per field. Name no function, variable, or file in them; the file and symbol have their own place. Write "the payment step ignores a failed charge", not "`payOrder` has an empty catch".
+The user decides from your words alone and may not be technical. Write each decision in everyday words about what users and the data experience, one or two short sentences per field. Name no function, variable, or file in them; the file and symbol have their own place. If a technical term can't be avoided, say what it means. Write "the payment step ignores a failed charge", not "`payOrder` has an empty catch". Say who is affected as people or parts of the product ("staff", "the checkout page"), not as code ("callers", "the handler").
 - question: one plain question that names the choice, such as "Can a cancelled order still be shipped?"
 - today: what happens now.
 - problem: who or what it could hurt, and how. For a small item, name the flow or feature it belongs to, so the user sees why it matters.
 - evidence: what you checked and what makes you think it's wrong: what uses it, and what the docs and tests say was intended. Say so when nothing says. Never state a guess as a fact.
-- options: up to 3. Each says what changes for users, whether an existing flow changes, and what happens to data already stored.
+- options: up to 3. For each one: what it does (what changes for users, whether an existing flow changes, and what happens to data already stored), its advantage, and its disadvantage. The user weighs one against the other, so every option gets both, "leave as is" included. A disadvantage can be as small as the size of the change or a habit users must drop, but never leave it out.
 - suggested: the option you'd pick, and what would make another one right.
 - file and symbol: where it is (files may move later).
 

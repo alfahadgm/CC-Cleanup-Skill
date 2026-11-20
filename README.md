@@ -9,13 +9,14 @@ A Claude Code plugin that fixes a whole codebase in one run. It works through 12
 
 ## How it works
 
-Every step goes through the same five stages:
+Every step goes through the same six stages:
 
 1. **Find.** One subagent per slice of the codebase looks for the step's problems. A slice is about 50 source files, so a small repo is a single slice.
 2. **Verify.** Different subagents try to disprove each finding. A fix that could change behavior must start with a test that passes on the current code.
 3. **Fix.** Fixes that touch the same files go to one agent, and the rest run in parallel.
-4. **Check.** Claude runs the project's checks itself. A step may not add a failing check.
-5. **Commit.** The step becomes one commit that lists what changed, what couldn't be applied, and what needs your decision.
+4. **Review.** Another subagent reads what each group of fixes actually changed, and flags anything that goes beyond its fix.
+5. **Check.** Claude runs the project's checks itself. A step may not add a failing check.
+6. **Commit.** The step becomes one commit that lists what changed, what couldn't be applied, and what needs your decision.
 
 Changes Claude shouldn't decide alone are collected along the way and put to you at step 11.
 
@@ -53,6 +54,7 @@ If you installed an earlier version by copying a `cleanup` folder into `~/.claud
 - Use auto permission mode if you can. In manual mode, Claude Code asks you to approve the step workflow: choose "Yes, and don't ask again" so it asks only once.
 - Add your install, build, lint, and test commands to your allow rules, so the agents don't stop to ask.
 - If a flow or rule is agreed and must stay as it is, say so in your project's `CLAUDE.md`. The agents read it, and can then tell an agreed flow from a mistake.
+- Do the same for your architecture: which layers the code has, and which may use which. Stated layers are followed as written; without them the run has to infer the structure from the code.
 
 ### Commands
 
@@ -83,7 +85,7 @@ The run starts by creating the `cleanup/<date>` branch and recording which check
 | 6 | `error-handling` | Fixes swallowed errors, missing failure paths, leaked resources, and suppressions |
 | 7 | `simplify` | Inlines needless abstractions, and merges duplicated logic and styling |
 | 8 | `patterns` | Moves each job (fetching, state, forms, logging, and so on) to one approach |
-| 9 | `placement` | Moves code to the layer and folder the project's own structure calls for |
+| 9 | `placement` | Moves code to the layer and folder the project's own structure calls for, and turns large or unclear reorganizations into questions for you |
 | 10 | `naming` | Gives each concept one clear name everywhere |
 | 11 | `decisions` | Asks you about the changes it won't make on its own, then applies your choices |
 | 12 | `docs-sync` | Updates the docs for everything the run moved, renamed, or removed |
@@ -126,25 +128,28 @@ Rotate:
 - payments API key found in src/payments.js (still in git history)
 ```
 
-**Questions at step 11.** Claude asks about the changes it won't make on its own: external contracts (API fields, DB columns, env vars), new dependencies, any change to a business flow or rule, and UX changes. Each question is written in plain words for someone who hasn't read the code:
+**Questions at step 11.** Claude asks about the changes it won't make on its own: external contracts (API fields, DB columns, env vars), new dependencies, any change to a business flow or rule, UX changes, and large reorganizations of files. Each question is written in everyday words for someone who isn't technical and hasn't read the code:
 
 - what happens today, and who or what it could hurt
 - the evidence: what was checked, and what the docs and tests say was intended
-- what each option changes for your users, your existing flows, and the data you already store
+- what each option changes for your users, your existing flows, and the data you already store, with its advantage and its disadvantage
 - which option Claude suggests, and the file and symbol it's about
 
-One decision from that run, as its commit records it:
+One decision, as a run's commit records it:
 
 ```
-- Should paying an order that is not pending be refused before the card is charged?
-  Today: The card is charged first. If the order is already paid, shipped or cancelled, the order then refuses to become paid and an error is raised, but the charge has already happened. A repeated pay attempt on a paid order charges the customer again.
-  Problem: The card is charged before the order's state is checked. Paying an order that is already paid, shipped or cancelled charges the customer, then the move to paid is refused and an error is thrown, so the order is unchanged but the money was taken.
-  Evidence: Orders move pending to paid or cancelled, paid to shipped or cancelled, cancelled to shipped, and shipped is final. Only pending allows moving to paid. The charge call runs before that check. No test covers paying an order that is not pending. Docs say nothing about it.
-  Option 1: Check the order is pending before charging, and raise the same error without charging otherwise. Orders already stored are unaffected, and a double pay no longer charges twice.
-  Option 2: Leave as is, if charging first is intended and refunds are handled elsewhere. Nothing changes for stored orders.
-  Suggested: Check before charging; another option is right only if a refund process exists outside this code.
-  Code: src/orders.js / payOrder, moveOrder
+- Can a cancelled order still be shipped?
+  Today: The order flow lets a cancelled order move to shipped. An order that was cancelled while still unpaid can therefore be shipped without ever being paid.
+  Problem: A cancelled order can still be shipped. Customers who cancelled could be sent goods, and staff could ship something that was never paid for.
+  Evidence: Orders go pending to paid or cancelled, paid to shipped or cancelled, cancelled to shipped, and shipped has no way out. Nothing else in the code uses the cancelled-to-shipped step. The only test touching this is skipped and says a shipped order cannot be cancelled, which already holds. No doc or test says cancelled-to-shipped was intended. It may be a typo.
+  Option 1: Make cancelled a final state with no way out. Orders already stored as cancelled can no longer be shipped. Advantage: Closes the hole that lets a cancelled or unpaid order ship. Disadvantage: Anyone relying on re-shipping cancelled orders loses that ability.
+  Option 2: Keep the step as it is and record it as intended, with a test. Advantage: No behavior change. Disadvantage: Unpaid cancelled orders can still ship.
+  Option 3: Let cancelled orders go back to pending (reopen) instead of shipping directly. Advantage: Shipping still requires payment. Disadvantage: Adds a new step users must learn, and it is a bigger change.
+  Suggested: Make cancelled final, unless the business knowingly ships cancelled orders.
+  Code: src/orders.js / transitions, moveOrder
 ```
+
+Every option carries its advantage and its disadvantage. The safety hook blocks a commit in which one went missing.
 
 In a run with nobody to ask, it leaves them all as they are and lists them.
 
@@ -155,7 +160,8 @@ In a run with nobody to ask, it leaves them all as they are and lists them.
 - **Its own branch.** The run never pushes, merges, or rewrites history.
 - **A hook backs that up.** While a run is in progress, the plugin blocks `git push`, `git clean`, and `git reset --hard` in that repo, for Claude and for every subagent.
 - **Subagents only read from git.** Claude stages and commits, after running the project's checks itself.
-- **No new failures.** Checks that already failed before the run are recorded first and reported at the end. No step may add one.
+- **No new failures.** Checks that already failed before the run are recorded first and reported at the end. No step may add one. For a build, typecheck, or lint that already fails, the number of errors is recorded, and no step may raise it.
+- **Your structure, not a new one.** Layers come from your architecture docs, lint rules, and agent instruction files where they exist. Where they have to be inferred, small moves are applied, and large or unclear ones become questions.
 - **Contracts and flows are yours to change.** API shapes, routes, database schema, stored values, env var names, stored keys, published exports, and the states and rules of a business flow are returned as decisions, not edited.
 - **Hands off.** Agents are told never to edit generated or vendored code, existing migrations, or real `.env` files, and never to run anything against production.
 - **Secrets.** Agents are told never to print a secret's value or put it in a commit message. Removing a secret from the code doesn't remove it from git history, so the summary lists what to rotate.
@@ -164,6 +170,8 @@ In a run with nobody to ask, it leaves them all as they are and lists them.
 ## Cost
 
 This is a big run: up to 12 workflows, each with several agents. It scales with the repo, because every step starts one Find agent per slice.
+
+Every agent runs on your session's model and effort level, so choose them before you start (`/model`, `/effort`). The run announces the number of slices before the first step.
 
 For scale, all 12 steps over the six-file test fixture took 8 to 9 minutes and about $2.70 with Sonnet 5.5 on Claude Code 2.1.327.
 

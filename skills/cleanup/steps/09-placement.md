@@ -1,6 +1,6 @@
 # Step 9: Code placement
 
-First infer the project's intended structure from its folder layout and dominant patterns. Judge placement against that, not against an ideal architecture.
+Take the project's structure from the layers in the brief. Where they are stated (architecture docs, agent instruction files, boundary rules in the lint or build config), that is the structure. Where they are only inferred, confirm them against the newest code before you rely on them: in a messy codebase the most common layout may be the mess. Judge placement against the project's structure, not against an ideal architecture.
 
 ## Find and fix
 - **Wrong layer**: business rules in UI components or route handlers, data access outside the data layer, side effects in modules that should be pure.
@@ -14,4 +14,10 @@ First infer the project's intended structure from its folder layout and dominant
 - If the old path is part of a public API, keep a re-export at the old path.
 - Skip moves that are only a matter of taste. Behavior must not change.
 
-Done when: checks pass, there are no import cycles caused by placement, and each piece of code sits where the project's structure says it belongs.
+## Return as decisions
+- A reorganization that moves more than about 10 files. Give its size.
+- A move the project's structure doesn't settle: the layers are only inferred and the code follows two layouts, or the piece fits two places equally well. Offer both places as options; don't pick one yourself.
+
+Nothing changes for users in either case, so say that. The advantage of a move is code that is easier to find and change. Its disadvantage is a large change to review, and conflicts with work in progress on other branches.
+
+Done when: checks pass, there are no import cycles caused by placement, and each piece of code sits where the project's structure says it belongs, apart from the moves returned as decisions.

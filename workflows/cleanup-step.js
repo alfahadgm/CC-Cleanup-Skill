@@ -6,6 +6,7 @@ export const meta = {
     { title: 'Find', detail: 'one agent per slice' },
     { title: 'Verify', detail: 'other agents try to disprove each finding' },
     { title: 'Fix', detail: 'one agent per group of fixes that share files' },
+    { title: 'Review', detail: 'other agents read what each group changed' },
   ],
 }
 
@@ -15,6 +16,7 @@ if (!a.rules || !a.step) throw new Error('cleanup-step needs args.rules and args
 
 const text = value => (typeof value === 'string' ? value : JSON.stringify(value))
 const chunk = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, (i + 1) * size))
+const filesOf = fixes => [...new Set(fixes.flatMap(f => f.files))]
 // A slice is a string or an object such as { name, paths }. Agents get all of it; progress labels get its name.
 const slices = a.slices && a.slices.length ? a.slices : ['the whole repository']
 const label = slice => String(slice.name || text(slice)).slice(0, 40)
@@ -46,7 +48,7 @@ const FINDINGS = {
           files: { ...strings, description: 'Every source, test, and doc file the fix edits, creates, moves, or deletes. Not the dependency manifest or lockfile.' },
           symbols: strings,
           where: { type: 'string', description: 'path:line of the clearest evidence' },
-          problem: { type: 'string' },
+          problem: { type: 'string', description: 'For a decision: who or what it could hurt, and how, in the plain words the rules ask for' },
           fix: { type: 'string', description: 'The exact change, including anything it leaves unused. Empty for a decision.' },
           kind: { type: 'string', enum: ['fix', 'decision'] },
           risk: { type: 'string', enum: ['mechanical', 'behavioral'] },
@@ -57,8 +59,20 @@ const FINDINGS = {
             properties: {
               question: { type: 'string', description: 'One plain question that names the choice' },
               today: { type: 'string', description: 'What happens now, as users or the data experience it' },
-              evidence: { type: 'string', description: 'What you checked, and what the docs and tests say was intended' },
-              options: { ...strings, description: 'Up to 3. Each says what changes for users, for the existing flow, and for data already stored' },
+              evidence: { type: 'string', description: 'What you checked, and what the docs and tests say was intended. Describe code by what it does ("the payment step"); its names belong in symbols' },
+              options: {
+                type: 'array',
+                description: 'Up to 3',
+                items: {
+                  type: 'object',
+                  properties: {
+                    does: { type: 'string', description: 'What changes for users, for the existing flow, and for data already stored' },
+                    advantage: { type: 'string', description: 'What gets better, and for whom, in everyday words' },
+                    disadvantage: { type: 'string', description: 'What it costs or risks, and for whom, in everyday words: "other parts of the app that take payments", not "callers". Every option has one.' },
+                  },
+                  required: ['does', 'advantage', 'disadvantage'],
+                },
+              },
               suggested: { type: 'string', description: 'The option you would pick, and what would make another one right' },
             },
             required: ['question', 'today', 'evidence', 'options', 'suggested'],
@@ -94,7 +108,7 @@ const RESULT = {
   properties: {
     applied: { ...strings, description: 'One line per fix: the file and what changed' },
     notApplied: { ...strings, description: '"<fix>: <reason>". Start the line with BLOCKED when a permission check stopped it.' },
-    decisions: { ...strings, description: 'One string per decision, written as the rules say, one field per line: the question, then "Today: ...", "Problem: ...", "Evidence: ...", "Option 1: ...", "Suggested: ...", "Code: <file> / <symbol>"' },
+    decisions: { ...strings, description: 'One string per decision, written as the rules say, one field per line: the question, then "Today: ...", "Problem: ...", "Evidence: ...", "Option 1: ... Advantage: ... Disadvantage: ..." (each option on one line, with both), "Suggested: ...", "Code: <file> / <symbol>"' },
     untrack: { ...strings, description: 'Files to untrack' },
     env: { ...strings, description: '"<VAR_NAME>: <what it is for>"' },
     rotate: { ...strings, description: '"<secret name> found in <file>". Never the value.' },
@@ -103,16 +117,24 @@ const RESULT = {
   },
   required: ['applied', 'notApplied'],
 }
+const FLAGS = {
+  type: 'object',
+  properties: { flagged: { ...strings, description: '"<file>: <what changed, and what that breaks>". Empty when every change is what its fix describes.' } },
+  required: ['flagged'],
+}
 
-const canon = a.inventory
-  ? (await agent(
-      `${context}
+let canon = ''
+if (a.inventory) {
+  canon = await agent(
+    `${context}
 
 # Your job: Inventory (don't edit anything)
 This step needs one view of the whole codebase before the work is split up. Start from the project brief, read what you need, and make the canonical choices this step calls for: terms, patterns, shared tokens, target structure. Return them as a short list, one line each: the choice, and one file that shows it. The agents after you apply your choices and make none of their own.`,
-      { label: 'inventory', phase: 'Inventory' },
-    )) || ''
-  : ''
+    { label: 'inventory', phase: 'Inventory' },
+  ).catch(() => null)
+  // Without the canonical choices each slice would pick its own, so the step ends here and changes nothing.
+  if (!canon) return { applied: [], notApplied: ["Inventory didn't finish, so this step changed nothing; run the step again"], decisions: [], untrack: [], env: [], rotate: [], renamed: [], flagged: [], canon: '' }
+}
 
 const findPrompt = (slice, i) => `${context}
 
@@ -137,7 +159,7 @@ You didn't produce these findings. Try to disprove each one:
 1. Is the problem real? Read the code; don't trust the description.
 2. Does the fix keep behavior the same, or change only the defect?
 3. Could the change alter behavior? Then a test must cover it. If none does, set testFile to the test file the fix must write first, with a test that passes on the current code.
-For a decision, check only that the problem is real, the evidence is true, and each option does what it says to users, flows, and stored data.
+For a decision, check only that the problem is real, the evidence is true, and each option does what it says to users, flows, and stored data, with an advantage and a disadvantage that are true.
 Set real to false when you can't confirm the problem, the fix is unsafe, or the finding isn't this step's job. When unsure, false. Return one verdict per finding, by index.
 
 ${JSON.stringify(batch.map((finding, index) => ({ index, ...finding })), null, 1)}`
@@ -145,10 +167,26 @@ ${JSON.stringify(batch.map((finding, index) => ({ index, ...finding })), null, 1
 const fixPrompt = fixes => `${context}
 
 # Your job: Fix
-Apply these verified fixes. Your files: ${[...new Set(fixes.flatMap(f => f.files))].join(', ')}
+Apply these verified fixes. Your files: ${filesOf(fixes).join(', ')}
 The fixes may overlap; make each change once. Another agent runs the package manager, so don't install or remove dependencies.
 
 ${JSON.stringify(fixes, null, 1)}`
+
+const reviewPrompt = fixes => `${context}
+
+# Your job: Review (don't edit anything)
+You didn't make these changes. Other agents were given the fixes below and edited these files: ${filesOf(fixes).join(', ')}
+Read what they actually changed: \`git diff HEAD\` on those files, and each new file in full (\`git status --porcelain\` lists them). Compare a moved file with \`git show HEAD:<old path>\`.
+Flag a change only when it does something its fix doesn't describe, of one of these kinds:
+- it changes what the program does
+- it changes something the rules say to return as a decision
+- it deletes, skips, or weakens a test
+- it adds an import that points the wrong way, or puts code in a layer where the brief says it doesn't belong
+- it edits a generated or vendored file, one of the user's untracked files, or a file outside this run's scope
+- no fix calls for it at all
+A fix that wasn't applied, or was applied another way with the same result, is not a problem. Flag only what you can point to in the diff. Return one line per flagged change: the file, what changed, and what that breaks.
+
+${JSON.stringify(fixes.map(f => ({ files: f.files, problem: f.problem, fix: f.fix })), null, 1)}`
 
 const dependencyPrompt = (which, fixes, unused = []) => `${context}
 
@@ -163,6 +201,8 @@ ${JSON.stringify(fixes.map(f => ({ problem: f.problem, fix: f.fix })), null, 1)}
 
 const notApplied = []
 let refuted = 0
+// With trustChecks, a wrong mechanical fix fails the project's own checks, so it needs no second opinion: no Verify, no Review.
+const trusted = f => a.trustChecks && f.kind === 'fix' && f.risk === 'mechanical'
 
 // Each slice is verified as soon as its Find finishes; no waiting for the slowest slice.
 const verifySlice = async (found, slice) => {
@@ -170,8 +210,6 @@ const verifySlice = async (found, slice) => {
     notApplied.push(`Find didn't finish for: ${label(slice)}`)
     return []
   }
-  // With trustChecks, a wrong mechanical fix fails the project's own checks, so it needs no second opinion.
-  const trusted = f => a.trustChecks && f.kind === 'fix' && f.risk === 'mechanical'
   const kept = found.findings.filter(trusted)
   const batches = chunk(found.findings.filter(f => !trusted(f)), 12)
   const answers = await parallel(
@@ -205,11 +243,13 @@ const fixes = verified.filter(f => f.kind === 'fix')
 log(`${verified.length} verified (${fixes.length} fixes, ${decisions.length} decisions), ${refuted} refuted`)
 
 const results = []
-const fix = async (prompt, opts) => {
+const flagged = []
+const fix = async (prompt, opts, files = []) => {
   // agent() returns null when stopped and throws when it stalls out; either way the step goes on and the conductor's checks catch the damage.
   const result = await agent(prompt, { phase: 'Fix', schema: RESULT, ...opts }).catch(() => null)
   if (result) results.push(result)
-  else notApplied.push(`${opts.label}: the agent didn't finish; its files may be half edited`)
+  else notApplied.push(`${opts.label}: the agent didn't finish; ${files.length ? `these files may be half edited: ${files.join(', ')}` : 'its files may be half edited'}`)
+  return result
 }
 
 // Additions and upgrades run alone first, before any group needs them.
@@ -240,7 +280,16 @@ await parallel(
     // A group of only mechanical fixes is already fully specified; it doesn't need the session's effort.
     const effort = group.every(f => f.risk === 'mechanical') ? { effort: 'low' } : {}
     const batches = chunk(group, 15)
-    for (const [b, batch] of batches.entries()) await fix(fixPrompt(batch), { label: `fix: group ${g + 1}${batches.length > 1 ? ` #${b + 1}` : ''}`, ...effort })
+    let changed = false
+    for (const [b, batch] of batches.entries()) {
+      const result = await fix(fixPrompt(batch), { label: `fix: group ${g + 1}${batches.length > 1 ? ` #${b + 1}` : ''}`, ...effort }, filesOf(batch))
+      // An agent that didn't finish may have edited files too.
+      changed = changed || !result || result.applied.length > 0
+    }
+    // Verify judged the plan; Review judges what was written. No other group edits these files, so it starts as soon as this group is done.
+    if (!changed || group.every(trusted)) return
+    const review = await agent(reviewPrompt(group), { label: `review: group ${g + 1}`, phase: 'Review', schema: FLAGS }).catch(() => null)
+    flagged.push(...(review ? review.flagged : [`Review didn't finish for: ${filesOf(group).join(', ')}`]))
   }),
 )
 
@@ -251,10 +300,12 @@ const unused = collect('unusedDependencies')
 if (removes.length || unused.length) await fix(dependencyPrompt('remove', removes, unused), { label: 'fix: dependencies (remove)' })
 
 // A decision as the user reads it, in the commit message and in the step 11 question. Without its write-up, the problem stands in.
+// An option is one line that carries its advantage and disadvantage: conductors fold them into that line anyway, and guard.sh checks it has both.
+const sentence = s => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`)
 const card = f => {
   const d = f.decision
   const lines = d
-    ? [d.question, `Today: ${d.today}`, `Problem: ${f.problem}`, `Evidence: ${d.evidence}`, ...d.options.map((option, i) => `Option ${i + 1}: ${option}`), `Suggested: ${d.suggested}`]
+    ? [d.question, `Today: ${d.today}`, `Problem: ${f.problem}`, `Evidence: ${d.evidence}`, ...d.options.map((o, i) => `Option ${i + 1}: ${sentence(o.does)} Advantage: ${sentence(o.advantage)} Disadvantage: ${sentence(o.disadvantage)}`), `Suggested: ${d.suggested}`]
     : [f.problem]
   return [...lines, `Code: ${f.files[0] || f.where} / ${f.symbols.join(', ') || '-'}`].join('\n  ')
 }
@@ -267,6 +318,7 @@ return {
   env: collect('env'),
   rotate: collect('rotate'),
   renamed: collect('renamed'),
+  flagged,
   canon,
   stats: { verified: verified.length, refuted, fixAgents: results.length },
 }

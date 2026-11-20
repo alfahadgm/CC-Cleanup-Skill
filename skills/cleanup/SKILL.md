@@ -60,9 +60,9 @@ After a long run the conversation is compacted, and the end of this file can be 
    - Resuming: changes to tracked files, and untracked files not in `untracked`, come from an unfinished step. Ask the user whether to stash just those paths (`git stash push -u -- <paths>`, recoverable with `git stash pop`) and redo that step, or stop.
 4. **Branch.** Create and switch to `cleanup/<date>` (today's date as YYYY-MM-DD; add `-2`, `-3` if the name is taken). The commit you branched from is the base; every diff and log in this run is relative to it. Write `state` now, with the base, branch, selected steps, and scope.
 5. **Checks.** Find the commands for install, build, typecheck, lint, format check, and tests: package scripts, Makefile or justfile, pyproject or tox, CI config, README. Install dependencies with the locked command (`npm ci`, `pnpm install --frozen-lockfile`, `yarn install --immutable`, or the stack's equivalent). If that fails because the lockfile is out of sync, use the normal install, and commit the lockfile change with the first step (say so in its message).
-6. **Brief.** Launch one agent to write `.cleanup/brief`, 60 lines of Markdown at most; it runs while you do the baseline. It holds the stack and package layout; the project's conventions (folder layout, dominant patterns, existing helpers, styling approach, error style, naming, test style), each with one example path; the generated and vendored paths; and the slices. A slice is a package or folder that one agent can read in full, about 50 source files or 8,000 lines: split bigger folders and merge tiny ones. A repo that fits in one slice gets one. With `in <path>`, slice only that folder. The agent returns the slices (name, paths, file count); save them in `state`. If the repo has about 50 source files or fewer, write the brief yourself instead; this is the only shortcut a small repo gets.
-7. **Baseline.** Run every check once, with output sent to `.cleanup/checks.log`. Run the failing tests a second time: the ones that pass on the retry are flaky. Record which checks pass, the names of the failing tests, and the flaky ones. Pre-existing failures aren't regressions, but no step may add a new one. The baseline never changes; it's the "before" in the final report. The allowed failures start as a copy of it and only shrink.
-8. **Announce** in two or three lines: branch, check commands, baseline result, number of slices, steps to run. Then start the first step without waiting.
+6. **Brief.** Launch one agent to write `.cleanup/brief`, 60 lines of Markdown at most; it runs while you do the baseline. It holds the stack and package layout; the layers and which may import which, each marked stated (name the doc, lint rule, or instruction file) or inferred; the project's conventions (folder layout, dominant patterns, existing helpers, styling approach, error style, naming, test style), each with one example path; the generated and vendored paths; and the slices. A slice is a package or folder that one agent can read in full, about 50 source files or 8,000 lines: split bigger folders and merge tiny ones. A repo that fits in one slice gets one. With `in <path>`, slice only that folder. The agent returns the slices (name, paths, file count); save them in `state`. If the repo has about 50 source files or fewer, write the brief yourself instead; this is the only shortcut a small repo gets.
+7. **Baseline.** Run every check once, with output sent to `.cleanup/checks.log`. Run the failing tests a second time: the ones that pass on the retry are flaky. Record which checks pass, the names of the failing tests, the flaky ones, and the error count of any other failing check (build, typecheck, lint), because its exit code can't show a new error. Pre-existing failures aren't regressions, but no step may add a new one. The baseline never changes; it's the "before" in the final report. The allowed failures start as a copy of it and only shrink.
+8. **Announce** in two or three lines: branch, check commands, baseline result, number of slices, steps to run, and what drives the cost: one Find agent per slice in every step, on the session's model and effort. Then start the first step without waiting.
 
 ## Running one step
 
@@ -74,7 +74,7 @@ After a long run the conversation is compacted, and the end of this file can be 
    - `earlier`: the lines you collected in Prepare
    - `slices`: the slices from `state`. For decisions, pass one item per chosen decision instead. For docs-sync, leave it out; one agent is enough.
    - `inventory`: true for simplify, patterns, placement, and naming, which need one view of the whole codebase before the work is split
-   - `trustChecks`: true when the checks include a typecheck or a compile step
+   - `trustChecks`: true when the checks include a typecheck or compile step that isn't an allowed failure; one that already fails can't catch a wrong fix
 
    Don't write your own script. If that name isn't found, pass `scriptPath` `${CLAUDE_PLUGIN_ROOT}/workflows/cleanup-step.js` instead. If Workflow can't load that path either, read the file and pass its text as `script` once; the result names a saved copy to use as `scriptPath` from then on.
 
@@ -83,17 +83,18 @@ After a long run the conversation is compacted, and the end of this file can be 
    - **Find.** One agent per slice returns findings. If nothing is found, the workflow ends here.
    - **Verify.** Agents that didn't produce the findings try to disprove them, slice by slice as each Find finishes. A fix that could alter behavior with no test covering it must start by writing a test that passes on the current code. With `trustChecks`, fixes that the compiler would catch skip this phase.
    - **Fix.** Fixes that share a file go to the same agent, and the groups run in parallel. Dependency additions and upgrades run alone first; removals run alone last.
+   - **Review.** Agents that didn't apply the fixes read what each group changed, and return as `flagged` the changes that break the rules.
 
-   It returns `applied`, `notApplied`, `decisions`, `untrack`, `env`, `rotate`, `renamed`, and `canon`. It doesn't run the full check suite; you do, once, in step 4.
-3. **Blocked fixes.** For each `notApplied` item that starts with BLOCKED (a permission check stopped it), try it once yourself in the main session, where the user can see and answer the permission prompt. If it's denied again, list it as not applied.
+   It returns `applied`, `notApplied`, `decisions`, `untrack`, `env`, `rotate`, `renamed`, `flagged`, and `canon`. It doesn't run the full check suite; you do, once, in step 4.
+3. **Blocked and flagged.** For each `notApplied` item that starts with BLOCKED (a permission check stopped it), try it once yourself in the main session, where the user can see and answer the permission prompt. If it's denied again, list it as not applied. For each `flagged` item, read that change in `git diff`; if it does break rules.md, reverse it and list the fix as not applied.
 4. **Check it yourself.**
    - Nothing changed (`git status --porcelain` shows only the user's untracked files): skip to Commit.
    - Only prose docs changed, and nothing that code, the build, or CI reads: run only the checks that cover those files.
    - Otherwise run the full suite, with output sent to `.cleanup/checks.log`. Read the exit codes and the names of failing tests, not the whole log.
 
-   Compare with the allowed failures. A test that newly fails gets one rerun; if it then passes, add it to the flaky tests and move on. For a real new failure, launch one agent with `rules.md`, the step file, and the log path. It fixes the regression that this step's uncommitted changes caused, or reverses the fix that caused it. Then run the checks again. After two failed rounds, discard the step's changes to the files involved (`git restore`, and delete the new files those fixes created), list those fixes as not applied, and run the checks again. Never commit with a new failure.
+   Compare with the allowed failures; a higher error count is a new failure. A test that newly fails gets one rerun; if it then passes, add it to the flaky tests and move on. For a real new failure, launch one agent with `rules.md`, the step file, and the log path. It fixes the regression that this step's uncommitted changes caused, or reverses the fix that caused it. Then run the checks again. After two failed rounds, discard the step's changes to the files involved (`git restore`, and delete the new files those fixes created), list those fixes as not applied, and run the checks again. Never commit with a new failure.
 
-   When an allowed failure now passes, remove it from the allowed failures, so no later step can bring it back.
+   When an allowed failure now passes, remove it from the allowed failures, and lower an error count that dropped, so no later step can bring it back.
 5. **Review the diff.** Look at `git diff --stat` and read the riskiest changes. Revert anything that breaks rules.md: a changed contract, an edited generated file, a test deleted or weakened to make checks pass, an edit outside the step's scope, any change to the user's untracked files.
 6. **Commit.**
    - Untrack the files the step returned with `git rm --cached` (the files stay on disk).
@@ -125,15 +126,15 @@ After a long run the conversation is compacted, and the end of this file can be 
    - If a full check run covered this commit, record it as the last one that did.
 8. **Report progress** in one line (step, files changed, decisions added), then start the next step.
 
-If the Workflow tool isn't available, run the same phases yourself with subagents, using the prompts in `${CLAUDE_PLUGIN_ROOT}/workflows/cleanup-step.js`: parallel subagents for Find and Verify, then one subagent per file group for Fix.
+If the Workflow tool isn't available, run the same phases yourself with subagents, using the prompts in `${CLAUDE_PLUGIN_ROOT}/workflows/cleanup-step.js`: parallel subagents for Find and Verify, then one subagent per file group for Fix and another for Review.
 
 ## Step 11: decisions
 
 Collect every `Needs decision:` item from this run's commits (`git log <base>..HEAD`). Find each item again in the current code by the symbol on its `Code:` line, since files may have moved or been renamed since. Drop items that no longer apply and merge duplicates. If none are left, go to the next step.
 
-Ask the user with AskUserQuestion: one decision per question, up to 4 questions per call, the highest impact first. The user may see only the dialog and may not know the code, so each question must stand on its own:
+Ask the user with AskUserQuestion: one decision per question, up to 4 questions per call, the highest impact first. The user may see only the dialog and may not be technical, so each question must stand on its own, in everyday words:
 - The question text is the item's question, then its `Today:`, `Problem:`, `Evidence:`, and `Code:` lines, in that order. Keep them in plain words about what users and the data experience. Rewrite any that still read like code, and read the code again if a line doesn't say why it matters.
-- Each option gets a short label, and a description that says what it changes for users, for an existing flow, and for data already stored. Put the suggested option first, marked "(Recommended)", and always add "Leave as is".
+- Each option gets a short label, and a description that says what it changes for users, for an existing flow, and for data already stored, then its advantage and its disadvantage. Put the suggested option first, marked "(Recommended)", and always add "Leave as is", with its own advantage and disadvantage.
 
 Group only near-identical items (such as near-identical colors) into one question with options like "Apply all suggested" and "Leave all as is". Save the answers in `state` as soon as you have them, so a resume doesn't ask again. If you can't ask, because AskUserQuestion is unavailable or denied as in a non-interactive run, leave every item as is; Finish lists them.
 

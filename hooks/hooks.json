@@ -6,7 +6,9 @@
         "hooks": [
           { "type": "command", "if": "Bash(git push *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
           { "type": "command", "if": "Bash(git clean *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
-          { "type": "command", "if": "Bash(git reset --hard *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" }
+          { "type": "command", "if": "Bash(git reset *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
+          { "type": "command", "if": "Bash(git commit *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
+          { "type": "command", "if": "Bash(git -*)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" }
         ]
       },
       {
@@ -14,7 +16,9 @@
         "hooks": [
           { "type": "command", "if": "PowerShell(git push *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
           { "type": "command", "if": "PowerShell(git clean *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
-          { "type": "command", "if": "PowerShell(git reset --hard *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" }
+          { "type": "command", "if": "PowerShell(git reset *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
+          { "type": "command", "if": "PowerShell(git commit *)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" },
+          { "type": "command", "if": "PowerShell(git -*)", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.sh\"" }
         ]
       }
     ]
