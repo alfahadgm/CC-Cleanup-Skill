@@ -2,6 +2,11 @@
 
 A Claude Code plugin that fixes a whole codebase in one run. It works through 12 steps, from repo setup and dead code to naming and a final docs sync. Each step is checked against the project's own build, lint, and tests, and becomes one commit on a new `cleanup/<date>` branch. Nothing is pushed: you review the branch and merge it yourself.
 
+<p align="center">
+  <img src=".github/assets/demo.webp" alt="Demo: /cleanup marks nine problems in a small codebase, fixes seven of them in separate commits, and leaves two as questions" width="800"><br>
+  <sub>A real run over this repo's <a href="test/fixture">test fixture</a>, replayed from its git history.</sub>
+</p>
+
 ## How it works
 
 Every step goes through the same five stages:
@@ -207,8 +212,9 @@ test/
   check.sh, run.sh         check a run over the fixture; run one unattended
 .claude/
   CLAUDE.md                guidance for Claude Code when working on this repo
-.github/workflows/
-  ci.yml                   runs the self-check on every push and pull request
+.github/
+  workflows/ci.yml         runs the self-check on every push and pull request
+  assets/demo.webp         the demo clip at the top of this README
 ```
 
 ### Releasing
